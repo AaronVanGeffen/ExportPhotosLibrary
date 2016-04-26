@@ -8,6 +8,7 @@ import sys
 
 from datetime import datetime, timezone
 from errno import EEXIST
+from exiftool import ExifTool, fsencode
 from signal import signal, SIGINT
 from tempfile import mkdtemp
 
@@ -16,6 +17,10 @@ def cleanUp():
     db.close()
     shutil.rmtree(tempDir)
     print("\nDeleted temporary files")
+
+    if 'et' in globals():
+        et.terminate()
+        print("Closed ExifTool.")
 
 def cleanOnInterrupt(signal, frame):
     cleanUp()
@@ -42,6 +47,7 @@ parser = argparse.ArgumentParser(description = 'Exports the contents of a Photos
 parser.add_argument('-s', '--source', default = "~/Pictures/Photos Library.photoslibrary", help = 'path to Photos.app library')
 parser.add_argument('-d', '--destination', default = "~/Desktop/Photos", help = 'path to export directory')
 parser.add_argument('-n', '--dryrun', default = False, help = "do not copy any files.", action = "store_true")
+parser.add_argument('-e', '--exif', default = True, help = "set EXIF date information in JPEG files.", action = "store_true")
 
 group = parser.add_mutually_exclusive_group()
 group.add_argument('-p', '--progress', default = True, help = "show a bar indicating the completion of the copying progress", action = "store_true")
@@ -89,6 +95,10 @@ index = 0
 copied = 0
 ignored = 0
 
+if args.exif:
+    et = ExifTool();
+    et.start();
+
 # Iterate over them.
 for row in db.execute('''
     SELECT m.imagePath, m.fileName, v.imageDate, v.imageTimeZoneOffsetSeconds, v.imageTimeZoneName
@@ -124,8 +134,29 @@ for row in db.execute('''
         ignored += 1
         if args.verbose:
             print ("Already at destination: %s" % destinationFile)
-    
-	# !!! TODO: write timestamp to EXIF as needed.
+
+    # Do we need to set some EXIF data while we're at it?
+    if args.exif:
+        extension = os.path.splitext(row[1])[1].lower()
+        if extension == '.jpg' or extension == '.jpeg':
+            currentExif = et.get_tags(("EXIF:DateTimeOriginal", "EXIF:CreateDate"), destinationFile)
+            desiredDate = timestamp.strftime("%Y:%m:%d %H:%M:%S")
+
+            # Figure out what the current date in the file is.
+            if 'EXIF:CreateDate' in currentExif:
+                compareDate = currentExif['EXIF:CreateDate']
+            elif 'EXIF:DateTimeOriginal' in currentExif:
+                compareDate = currentExif['EXIF:DateTimeOriginal']
+            else:
+                compareDate = ""
+
+            # Do we need to set a date ourselves?
+            if compareDate != desiredDate:
+                if args.verbose:
+                    print ("> EXIF date '%s' will be replaced with '%s'" % (compareDate, desiredDate))
+
+                cmd = map(fsencode, ['-EXIF:DateTimeOriginal=%s' % desiredDate, '-EXIF:CreateDate=%s' % desiredDate, destinationFile])
+                et.execute(*cmd)
 
     # !!! TODO: write faces to EXIF comment?
 
@@ -134,8 +165,8 @@ for row in db.execute('''
     if args.progress:
         showProgressBar(numImages, index)
 
-cleanUp()
-
 print ("Copying completed.")
 print ("%d files copied" % copied)
 print ("%d files ignored" % ignored)
+
+cleanUp()
