@@ -48,6 +48,7 @@ parser.add_argument('-s', '--source', default = "~/Pictures/Photos Library.photo
 parser.add_argument('-d', '--destination', default = "~/Desktop/Photos", help = 'path to export directory')
 parser.add_argument('-n', '--dryrun', default = False, help = "do not copy any files.", action = "store_true")
 parser.add_argument('-e', '--exif', default = True, help = "set EXIF date information in JPEG files.", action = "store_true")
+parser.add_argument('-f', '--faces', default = True, help = "set faces information in EXIF comment for JPEG files.", action = "store_true")
 
 group = parser.add_mutually_exclusive_group()
 group.add_argument('-p', '--progress', default = True, help = "show a bar indicating the completion of the copying progress", action = "store_true")
@@ -81,8 +82,20 @@ db = conn.cursor()
 
 # How many images do we have?
 db.execute("SELECT COUNT(*) FROM RKMaster WHERE isInTrash = 0 ORDER BY createDate")
-numImages = db.fetchone()[0];
+numImages = db.fetchone()[0]
 print ("Found %d images." % numImages)
+
+# Are we exporting faces?
+if args.faces:
+    facesDbPath = os.path.join(tempDir, 'Person.db')
+    shutil.copyfile(os.path.join(libraryRoot, 'Database', 'apdb', 'Person.db'), facesDbPath)
+
+    fconn = sqlite3.connect(facesDbPath)
+    fdb = fconn.cursor()
+
+    fdb.execute("SELECT COUNT(*) FROM RKFace WHERE personId > 0");
+    numFaces = fdb.fetchone()[0];
+    print ("Found %d tagged faces." % numFaces)
 
 # No images?
 if numImages == 0:
@@ -101,7 +114,7 @@ if args.exif:
 
 # Iterate over them.
 for row in db.execute('''
-    SELECT m.imagePath, m.fileName, v.imageDate, v.imageTimeZoneOffsetSeconds, v.imageTimeZoneName
+    SELECT m.imagePath, m.fileName, v.imageDate, v.imageTimeZoneOffsetSeconds, v.uuid
     FROM RKMaster AS m
     INNER JOIN RKVersion AS v ON v.masterId = m.modelId
     WHERE m.isInTrash = 0
@@ -109,7 +122,7 @@ for row in db.execute('''
     # Exactly when was this image shot?
     timestamp = datetime.fromtimestamp(epoch + row[2] + row[3], timezone.utc)
 
-    # print ("%-70s %s+%02d00 (%s)" % (row[0], timestamp.strftime("%Y-%m-%d %H:%M:%S"), int(row[3] / 3600), row[4]))
+    # print ("%-70s %s+%02d00 (%s)" % (row[0], timestamp.strftime("%Y-%m-%d %H:%M:%S"), int(row[3] / 3600)))
     # continue
 
     # Figure out where to put the file.
@@ -159,6 +172,19 @@ for row in db.execute('''
                 et.execute(*cmd)
 
     # !!! TODO: write faces to EXIF comment?
+    if args.faces:
+        fdb.execute('''
+            SELECT p.name
+            FROM RKPerson AS p
+            WHERE p.modelId IN(
+                SELECT f.personId
+                FROM RKFace AS f
+                WHERE f.imageId = ?
+            )''', (row[4],))
+
+        faces = fdb.fetchall()
+        if len(faces) and args.verbose:
+            print ("Faces:", ', '.join([face[0] for face in faces]))
 
     # Keep track of our progress.
     index += 1
