@@ -214,7 +214,7 @@ for row in db.execute('''
                 if args.verbose:
                     print ("> EXIF date '%s' will be replaced with '%s'" % (compareDate, desiredDate))
 
-                cmd = map(fsencode, ['-EXIF:DateTimeOriginal=%s' % desiredDate, '-EXIF:CreateDate=%s' % desiredDate, destinationFile])
+                cmd = map(fsencode, ['-EXIF:DateTimeOriginal=%s' % desiredDate, '-EXIF:CreateDate=%s' % desiredDate, '-overwrite_original', destinationFile])
                 et.execute(*cmd)
 
     # !!! TODO: write faces to EXIF comment?
