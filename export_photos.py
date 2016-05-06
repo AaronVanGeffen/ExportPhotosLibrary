@@ -63,12 +63,12 @@ if args.progress:
 
 libraryRoot = os.path.expanduser(args.source)
 if not os.path.isdir(libraryRoot):
-    sys.stderr.write('Library source path does not appear to be a directory.\n')
+    sys.stderr.write('Library source path "%s" does not appear to be a directory.\n' % libraryRoot)
     sys.exit(-1)
 
 destinationRoot = os.path.expanduser(args.destination)
 if not os.path.isdir(destinationRoot):
-    sys.stderr.write('Destination path does not appear to be a directory.\n')
+    sys.stderr.write('Destination path "%s" does not appear to be a directory.\n' % destinationRoot)
     sys.exit(-1)
 
 # Copy the database to a temporary directory, so as to not potentially harm the original.
