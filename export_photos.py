@@ -49,6 +49,8 @@ parser.add_argument('-d', '--destination', default = "~/Desktop/Photos", help = 
 parser.add_argument('-n', '--dryrun', default = False, help = "do not copy any files.", action = "store_true")
 parser.add_argument('-e', '--exif', default = True, help = "set EXIF date information in JPEG files.", action = "store_true")
 parser.add_argument('-f', '--faces', default = True, help = "set faces information in EXIF comment for JPEG files.", action = "store_true")
+parser.add_argument('-l', '--location', default = True, help = "append location to directory names.", action = "store_true")
+parser.add_argument('-r', '--region', default = False, help = "prepend region information to locations.", action = "store_true")
 
 group = parser.add_mutually_exclusive_group()
 group.add_argument('-p', '--progress', default = True, help = "show a bar indicating the completion of the copying progress", action = "store_true")
@@ -56,6 +58,8 @@ group.add_argument('-v', '--verbose', default = False, help = "increase the outp
 
 args = parser.parse_args()
 
+if args.region:
+    args.location = True
 if args.verbose:
     args.progress = False
 if args.progress:
@@ -97,6 +101,19 @@ if args.faces:
     numFaces = fdb.fetchone()[0];
     print ("Found %d tagged faces." % numFaces)
 
+# What about places?
+if (args.location):
+    placesDbPath = os.path.join(tempDir, 'Properties.apdb')
+    shutil.copyfile(os.path.join(libraryRoot, 'Database', 'apdb', 'Properties.apdb'), placesDbPath)
+
+    pconn = sqlite3.connect(placesDbPath)
+    pdb = pconn.cursor()
+    ldb = conn.cursor()
+
+    pdb.execute("SELECT COUNT(*) FROM RKPlace");
+    numPlaces = pdb.fetchone()[0];
+    print ("Found %d places." % numPlaces)
+
 # No images?
 if numImages == 0:
     sys.exit(0)
@@ -114,7 +131,7 @@ if args.exif:
 
 # Iterate over them.
 for row in db.execute('''
-    SELECT m.imagePath, m.fileName, v.imageDate, v.imageTimeZoneOffsetSeconds, v.uuid
+    SELECT m.imagePath, m.fileName, v.imageDate, v.imageTimeZoneOffsetSeconds, v.uuid, v.modelId
     FROM RKMaster AS m
     INNER JOIN RKVersion AS v ON v.masterId = m.modelId
     WHERE m.isInTrash = 0
@@ -125,14 +142,43 @@ for row in db.execute('''
     # print ("%-70s %s+%02d00 (%s)" % (row[0], timestamp.strftime("%Y-%m-%d %H:%M:%S"), int(row[3] / 3600)))
     # continue
 
+    # Append location to directory name.
+    place = ''
+    if args.location:
+        ldb.execute('''
+            SELECT placeId
+            FROM RKPlaceForVersion
+            WHERE versionId = ?''', (row[5],))
+
+        placeIds = ', '.join([str(placeId[0]) for placeId in ldb.fetchall()])
+        if len(placeIds):
+            pdb.execute('''
+                SELECT DISTINCT defaultName
+                FROM RKPlace
+                WHERE modelId IN(%s)
+                ORDER BY area ASC''' % placeIds)
+
+            regional_info = pdb.fetchall()
+            if len(regional_info):
+                if args.region:
+                    regional_info.reverse()
+                    place = ', '.join(location[0] for location in regional_info)
+                else:
+                    place = regional_info[0][0]
+
+            if not len(place):
+                place = ''
+            elif args.verbose:
+                print ("Place for photo: %s" % place)
+
     # Figure out where to put the file.
     destinationSubDir = timestamp.strftime("%Y-%m-%d")
-    destinationDir = os.path.join(destinationRoot, destinationSubDir)
-    destinationFile = os.path.join(destinationDir, row[1])
-
-    # !!! TODO: append location to directory name?
+    if len(place):
+       destinationSubDir += ' ' + place
 
     # Get ready to copy the file.
+    destinationDir = os.path.join(destinationRoot, destinationSubDir)
+    destinationFile = os.path.join(destinationDir, row[1])
     sourceImageFile = os.path.join(libraryRoot, "Masters", row[0])
     ensureDirExists(destinationDir)
 
