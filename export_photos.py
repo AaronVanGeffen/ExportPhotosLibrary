@@ -152,7 +152,7 @@ for row in db.execute('''
     if args.exif:
         extension = os.path.splitext(row[1])[1].lower()
         if extension == '.jpg' or extension == '.jpeg':
-            currentExif = et.get_tags(("EXIF:DateTimeOriginal", "EXIF:CreateDate"), destinationFile)
+            currentExif = et.get_tags(("EXIF:DateTimeOriginal", "EXIF:CreateDate"), sourceImageFile if args.dryrun else destinationFile)
             desiredDate = timestamp.strftime("%Y:%m:%d %H:%M:%S")
 
             # Figure out what the current date in the file is.
