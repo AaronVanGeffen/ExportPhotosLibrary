@@ -180,7 +180,8 @@ for row in db.execute('''
     destinationDir = os.path.join(destinationRoot, destinationSubDir)
     destinationFile = os.path.join(destinationDir, row["fileName"])
     sourceImageFile = os.path.join(libraryRoot, "Masters", row["imagePath"])
-    ensureDirExists(destinationDir)
+    if not args.dryrun:
+        ensureDirExists(destinationDir)
 
     # Copy the file if it doesn't exist already.
     if not os.path.isfile(destinationFile):
