@@ -104,7 +104,7 @@ if args.faces:
     print ("Found %d tagged faces." % numFaces)
 
 # What about places?
-if (args.location):
+if args.location:
     placesDbPath = os.path.join(tempDir, 'Properties.apdb')
     shutil.copyfile(os.path.join(libraryRoot, 'Database', 'apdb', 'Properties.apdb'), placesDbPath)
 
@@ -182,34 +182,12 @@ def setDateInExif(fileName, formattedDate):
 # Cocoa/Webkit uses a different epoch rather than the standard UNIX epoch.
 epoch = datetime(2001, 1, 1, 0, 0, 0, 0, timezone.utc).timestamp()
 
-index = 0
-copied = 0
-ignored = 0
+
+def photoTimestamp(row):
+    return datetime.fromtimestamp(epoch + row["date"] + row["offset"], timezone.utc)
 
 
-# Iterate over the photos.
-for row in db.execute('''
-    SELECT m.imagePath, m.fileName, v.imageDate AS date, v.imageTimeZoneOffsetSeconds AS offset, v.uuid, v.modelId
-    FROM RKMaster AS m
-    INNER JOIN RKVersion AS v ON v.masterId = m.modelId
-    WHERE m.isInTrash = 0
-    ORDER BY v.imageDate'''):
-
-    # Exactly when was this image shot?
-    timestamp = datetime.fromtimestamp(epoch + row["date"] + row["offset"], timezone.utc)
-
-    # Append location to directory name.
-    place = ''
-    if args.location:
-        place = placeByModelId(row["modelId"])
-        if len(place) and args.verbose:
-            print ("Place for photo: %s" % place)
-
-    # Figure out where to put the file.
-    destinationSubDir = timestamp.strftime("%Y-%m-%d")
-    if len(place):
-       destinationSubDir += ' ' + place
-
+def copyPhoto(row, destinationSubDir):
     # Get ready to copy the file.
     destinationDir = os.path.join(destinationRoot, destinationSubDir)
     destinationFile = os.path.join(destinationDir, row["fileName"])
@@ -221,20 +199,23 @@ for row in db.execute('''
     if not os.path.isfile(destinationFile):
         if not args.dryrun:
             shutil.copy(sourceImageFile, destinationFile)
-        copied += 1
         if args.verbose:
             print ("Copied as %s" % destinationFile)
+        return (destinationFile, 1)
+
     else:
-        ignored += 1
         if args.verbose:
             print ("Already at destination: %s" % destinationFile)
+        return (destinationFile, 2);
 
+
+def postProcessPhoto(fileName, row):
     # Do we need to set some EXIF data while we're at it?
     if args.exif:
         extension = os.path.splitext(row["fileName"])[1].lower()
         if extension == '.jpg' or extension == '.jpeg':
-            compareDate = currentDateInExif(sourceImageFile if args.dryrun else destinationFile)
-            desiredDate = timestamp.strftime("%Y:%m:%d %H:%M:%S")
+            compareDate = currentDateInExif(fileName)
+            desiredDate = photoTimestamp(row).strftime("%Y:%m:%d %H:%M:%S")
 
             # Do we need to set a date ourselves?
             if compareDate != desiredDate:
@@ -249,10 +230,89 @@ for row in db.execute('''
         if len(faces) and args.verbose:
             print ("Faces:", ', '.join([face["name"] for face in faces]))
 
-    # Keep track of our progress.
-    index += 1
-    if args.progress:
-        showProgressBar(numImages, index)
+
+index = 0
+copied = 0
+ignored = 0
+
+stack = []
+stack_timestamp = ""
+places_freq = dict()
+
+# Iterate over the photos.
+for row in db.execute('''
+    SELECT m.imagePath, m.fileName, v.imageDate AS date, v.imageTimeZoneOffsetSeconds AS offset, v.uuid, v.modelId
+    FROM RKMaster AS m
+    INNER JOIN RKVersion AS v ON v.masterId = m.modelId
+    WHERE m.isInTrash = 0
+    ORDER BY v.imageDate'''):
+
+    # Stack photos as long as their capture date matches.
+    timestamp = photoTimestamp(row).strftime("%Y-%m-%d")
+    if timestamp == stack_timestamp:
+        stack.append(row)
+
+        if args.location:
+            place = placeByModelId(row["modelId"])
+            if len(place):
+                places_freq[place] = places_freq.get(place, 0) + 1
+                if args.verbose:
+                    print ("Place for photo: %s" % place)
+            elif args.verbose:
+                print ("No place info")
+
+    # Ah, reached another date?
+    else:
+        # First, process existing stack, if any.
+        if len(stack):
+            # Figure out the dominant place for this day.
+            place = ''
+            if args.location and len(places_freq):
+                place = max(places_freq, key = places_freq.get)
+                if not len(place):
+                    place = ''
+
+            # Destination dir
+            destinationSubDir = stack_timestamp + (" " + place if len(place) else "")
+            if args.verbose:
+                print ("Destination subdir for stack (%d photos): \"%s\"" % (len(stack), destinationSubDir))
+
+            # Copy and process files in the stack.
+            for photo in stack:
+                # Copy the file if it's not in its destination yet.
+                (destinationFile, status) = copyPhoto(photo, destinationSubDir)
+                if status == 1:
+                    copied += 1
+                elif status == 2:
+                    ignored += 1
+
+                # Apply post-processing.
+                if not args.dryrun:
+                    postProcessPhoto(destinationFile, row)
+
+                # Keep track of our progress.
+                index += 1
+                if args.progress:
+                    showProgressBar(numImages, index)
+
+            if args.verbose:
+                print ("")
+
+        # Clear the stack
+        stack = [row]
+        stack_timestamp = timestamp
+
+        if args.location:
+            place = placeByModelId(row["modelId"])
+            if len(place):
+                places_freq = dict({place: 1})
+                if args.verbose:
+                    print ("Place for photo: %s" % place)
+            else:
+                places_freq = dict()
+                if args.verbose:
+                    print ("No place info")
+
 
 print ("Copying completed.")
 print ("%d files copied" % copied)
