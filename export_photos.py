@@ -121,6 +121,64 @@ if (args.location):
 if numImages == 0:
     sys.exit(0)
 
+if args.exif:
+    et = ExifTool();
+    et.start();
+
+
+def placeByModelId(modelId):
+    ldb.execute('''
+        SELECT placeId
+        FROM RKPlaceForVersion
+        WHERE versionId = ?''', (modelId,))
+
+    placeIds = ', '.join([str(placeId[0]) for placeId in ldb.fetchall()])
+    if len(placeIds):
+        pdb.execute('''
+            SELECT DISTINCT defaultName AS name
+            FROM RKPlace
+            WHERE modelId IN(%s)
+            ORDER BY area ASC''' % placeIds)
+
+        regional_info = pdb.fetchall()
+        if len(regional_info):
+            if args.region:
+                regional_info.reverse()
+                return ', '.join(location["name"] for location in regional_info)
+            else:
+                return regional_info[0]["name"]
+
+    return ''
+
+
+def facesByUuid(uuId):
+    fdb.execute('''
+        SELECT p.name
+        FROM RKPerson AS p
+        WHERE p.modelId IN(
+            SELECT f.personId
+            FROM RKFace AS f
+            WHERE f.imageId = ?
+        )''', (uuId,))
+
+    return fdb.fetchall()
+
+
+def currentDateInExif(fileName):
+    currentExif = et.get_tags(("EXIF:DateTimeOriginal", "EXIF:CreateDate"), fileName)
+    if 'EXIF:CreateDate' in currentExif:
+        return currentExif['EXIF:CreateDate']
+    elif 'EXIF:DateTimeOriginal' in currentExif:
+        return currentExif['EXIF:DateTimeOriginal']
+    else:
+        return ""
+
+
+def setDateInExif(fileName, formattedDate):
+    cmd = map(fsencode, ['-EXIF:DateTimeOriginal=%s' % formattedDate, '-EXIF:CreateDate=%s' % formattedDate, '-overwrite_original', fileName])
+    et.execute(*cmd)
+
+
 # Cocoa/Webkit uses a different epoch rather than the standard UNIX epoch.
 epoch = datetime(2001, 1, 1, 0, 0, 0, 0, timezone.utc).timestamp()
 
@@ -128,48 +186,24 @@ index = 0
 copied = 0
 ignored = 0
 
-if args.exif:
-    et = ExifTool();
-    et.start();
 
-# Iterate over them.
+# Iterate over the photos.
 for row in db.execute('''
     SELECT m.imagePath, m.fileName, v.imageDate AS date, v.imageTimeZoneOffsetSeconds AS offset, v.uuid, v.modelId
     FROM RKMaster AS m
     INNER JOIN RKVersion AS v ON v.masterId = m.modelId
     WHERE m.isInTrash = 0
     ORDER BY v.imageDate'''):
+
     # Exactly when was this image shot?
     timestamp = datetime.fromtimestamp(epoch + row["date"] + row["offset"], timezone.utc)
 
     # Append location to directory name.
     place = ''
     if args.location:
-        ldb.execute('''
-            SELECT placeId
-            FROM RKPlaceForVersion
-            WHERE versionId = ?''', (row["modelId"],))
-
-        placeIds = ', '.join([str(placeId[0]) for placeId in ldb.fetchall()])
-        if len(placeIds):
-            pdb.execute('''
-                SELECT DISTINCT defaultName
-                FROM RKPlace
-                WHERE modelId IN(%s)
-                ORDER BY area ASC''' % placeIds)
-
-            regional_info = pdb.fetchall()
-            if len(regional_info):
-                if args.region:
-                    regional_info.reverse()
-                    place = ', '.join(location[0] for location in regional_info)
-                else:
-                    place = regional_info[0][0]
-
-            if not len(place):
-                place = ''
-            elif args.verbose:
-                print ("Place for photo: %s" % place)
+        place = placeByModelId(row["modelId"])
+        if len(place) and args.verbose:
+            print ("Place for photo: %s" % place)
 
     # Figure out where to put the file.
     destinationSubDir = timestamp.strftime("%Y-%m-%d")
@@ -199,37 +233,19 @@ for row in db.execute('''
     if args.exif:
         extension = os.path.splitext(row["fileName"])[1].lower()
         if extension == '.jpg' or extension == '.jpeg':
-            currentExif = et.get_tags(("EXIF:DateTimeOriginal", "EXIF:CreateDate"), sourceImageFile if args.dryrun else destinationFile)
+            compareDate = currentDateInExif(sourceImageFile if args.dryrun else destinationFile)
             desiredDate = timestamp.strftime("%Y:%m:%d %H:%M:%S")
-
-            # Figure out what the current date in the file is.
-            if 'EXIF:CreateDate' in currentExif:
-                compareDate = currentExif['EXIF:CreateDate']
-            elif 'EXIF:DateTimeOriginal' in currentExif:
-                compareDate = currentExif['EXIF:DateTimeOriginal']
-            else:
-                compareDate = ""
 
             # Do we need to set a date ourselves?
             if compareDate != desiredDate:
                 if args.verbose:
                     print ("> EXIF date '%s' will be replaced with '%s'" % (compareDate, desiredDate))
 
-                cmd = map(fsencode, ['-EXIF:DateTimeOriginal=%s' % desiredDate, '-EXIF:CreateDate=%s' % desiredDate, '-overwrite_original', destinationFile])
-                et.execute(*cmd)
+                setDateInExif(destinationFile, desiredDate)
 
     # !!! TODO: write faces to EXIF comment?
     if args.faces:
-        fdb.execute('''
-            SELECT p.name
-            FROM RKPerson AS p
-            WHERE p.modelId IN(
-                SELECT f.personId
-                FROM RKFace AS f
-                WHERE f.imageId = ?
-            )''', (row["uuid"],))
-
-        faces = fdb.fetchall()
+        faces = facesByUuid(row["uuid"])
         if len(faces) and args.verbose:
             print ("Faces:", ', '.join([face["name"] for face in faces]))
 
