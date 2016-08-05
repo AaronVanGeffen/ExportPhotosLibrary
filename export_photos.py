@@ -82,6 +82,7 @@ shutil.copyfile(os.path.join(libraryRoot, 'Database', 'Library.apdb'), databaseP
 
 # Open a connection to this temporary database.
 conn = sqlite3.connect(databasePathLibrary)
+conn.row_factory = sqlite3.Row
 db = conn.cursor()
 
 # How many images do we have?
@@ -95,6 +96,7 @@ if args.faces:
     shutil.copyfile(os.path.join(libraryRoot, 'Database', 'apdb', 'Person.db'), facesDbPath)
 
     fconn = sqlite3.connect(facesDbPath)
+    fconn.row_factory = sqlite3.Row
     fdb = fconn.cursor()
 
     fdb.execute("SELECT COUNT(*) FROM RKFace WHERE personId > 0");
@@ -107,6 +109,7 @@ if (args.location):
     shutil.copyfile(os.path.join(libraryRoot, 'Database', 'apdb', 'Properties.apdb'), placesDbPath)
 
     pconn = sqlite3.connect(placesDbPath)
+    pconn.row_factory = sqlite3.Row
     pdb = pconn.cursor()
     ldb = conn.cursor()
 
@@ -131,16 +134,13 @@ if args.exif:
 
 # Iterate over them.
 for row in db.execute('''
-    SELECT m.imagePath, m.fileName, v.imageDate, v.imageTimeZoneOffsetSeconds, v.uuid, v.modelId
+    SELECT m.imagePath, m.fileName, v.imageDate AS date, v.imageTimeZoneOffsetSeconds AS offset, v.uuid, v.modelId
     FROM RKMaster AS m
     INNER JOIN RKVersion AS v ON v.masterId = m.modelId
     WHERE m.isInTrash = 0
     ORDER BY v.imageDate'''):
     # Exactly when was this image shot?
-    timestamp = datetime.fromtimestamp(epoch + row[2] + row[3], timezone.utc)
-
-    # print ("%-70s %s+%02d00 (%s)" % (row[0], timestamp.strftime("%Y-%m-%d %H:%M:%S"), int(row[3] / 3600)))
-    # continue
+    timestamp = datetime.fromtimestamp(epoch + row["date"] + row["offset"], timezone.utc)
 
     # Append location to directory name.
     place = ''
@@ -148,7 +148,7 @@ for row in db.execute('''
         ldb.execute('''
             SELECT placeId
             FROM RKPlaceForVersion
-            WHERE versionId = ?''', (row[5],))
+            WHERE versionId = ?''', (row["modelId"],))
 
         placeIds = ', '.join([str(placeId[0]) for placeId in ldb.fetchall()])
         if len(placeIds):
@@ -178,8 +178,8 @@ for row in db.execute('''
 
     # Get ready to copy the file.
     destinationDir = os.path.join(destinationRoot, destinationSubDir)
-    destinationFile = os.path.join(destinationDir, row[1])
-    sourceImageFile = os.path.join(libraryRoot, "Masters", row[0])
+    destinationFile = os.path.join(destinationDir, row["fileName"])
+    sourceImageFile = os.path.join(libraryRoot, "Masters", row["imagePath"])
     ensureDirExists(destinationDir)
 
     # Copy the file if it doesn't exist already.
@@ -196,7 +196,7 @@ for row in db.execute('''
 
     # Do we need to set some EXIF data while we're at it?
     if args.exif:
-        extension = os.path.splitext(row[1])[1].lower()
+        extension = os.path.splitext(row["fileName"])[1].lower()
         if extension == '.jpg' or extension == '.jpeg':
             currentExif = et.get_tags(("EXIF:DateTimeOriginal", "EXIF:CreateDate"), sourceImageFile if args.dryrun else destinationFile)
             desiredDate = timestamp.strftime("%Y:%m:%d %H:%M:%S")
@@ -226,11 +226,11 @@ for row in db.execute('''
                 SELECT f.personId
                 FROM RKFace AS f
                 WHERE f.imageId = ?
-            )''', (row[4],))
+            )''', (row["uuid"],))
 
         faces = fdb.fetchall()
         if len(faces) and args.verbose:
-            print ("Faces:", ', '.join([face[0] for face in faces]))
+            print ("Faces:", ', '.join([face["name"] for face in faces]))
 
     # Keep track of our progress.
     index += 1
