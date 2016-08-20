@@ -288,7 +288,7 @@ for row in db.execute('''
 
                 # Apply post-processing.
                 if not args.dryrun:
-                    postProcessPhoto(destinationFile, row)
+                    postProcessPhoto(destinationFile, photo)
 
                 # Keep track of our progress.
                 index += 1
