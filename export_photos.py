@@ -161,7 +161,8 @@ def facesByUuid(uuId):
             WHERE f.imageId = ?
         )''', (uuId,))
 
-    return fdb.fetchall()
+    faces = fdb.fetchall()
+    return [f["name"] for f in faces]
 
 
 def currentDateInExif(fileName):
@@ -176,6 +177,11 @@ def currentDateInExif(fileName):
 
 def setDateInExif(fileName, formattedDate):
     cmd = map(fsencode, ['-EXIF:DateTimeOriginal=%s' % formattedDate, '-EXIF:CreateDate=%s' % formattedDate, '-overwrite_original', fileName])
+    et.execute(*cmd)
+
+
+def setExifKeywords(fileName, keywords):
+    cmd = map(fsencode, ['-keywords={0}'.format(word) for word in keywords] + ['-overwrite_original', fileName])
     et.execute(*cmd)
 
 
@@ -209,6 +215,7 @@ def copyPhoto(row, destinationSubDir):
         return (destinationFile, 2);
 
 
+# TODO: merge calls to exiftool.
 def postProcessPhoto(fileName, row):
     # Do we need to set some EXIF data while we're at it?
     if args.exif:
@@ -224,11 +231,13 @@ def postProcessPhoto(fileName, row):
 
                 setDateInExif(destinationFile, desiredDate)
 
-    # !!! TODO: write faces to EXIF comment?
+    # Set faces as EXIF keywords.
     if args.faces:
         faces = facesByUuid(row["uuid"])
         if len(faces) and args.verbose:
-            print ("Faces:", ', '.join([face["name"] for face in faces]))
+            print ("> Faces:", ', '.join([face for face in faces]))
+
+        setExifKeywords(fileName, faces)
 
 
 index = 0
