@@ -93,7 +93,7 @@ print ("Found %d images." % numImages)
 # Are we exporting faces?
 if args.faces:
     facesDbPath = os.path.join(tempDir, 'Person.db')
-    shutil.copyfile(os.path.join(libraryRoot, 'Database', 'apdb', 'Person.db'), facesDbPath)
+    shutil.copyfile(os.path.join(libraryRoot, 'Database', 'Person.db'), facesDbPath)
 
     fconn = sqlite3.connect(facesDbPath)
     fconn.row_factory = sqlite3.Row
@@ -106,7 +106,7 @@ if args.faces:
 # What about places?
 if args.location:
     placesDbPath = os.path.join(tempDir, 'Properties.apdb')
-    shutil.copyfile(os.path.join(libraryRoot, 'Database', 'apdb', 'Properties.apdb'), placesDbPath)
+    shutil.copyfile(os.path.join(libraryRoot, 'Database', 'Properties.apdb'), placesDbPath)
 
     pconn = sqlite3.connect(placesDbPath)
     pconn.row_factory = sqlite3.Row
