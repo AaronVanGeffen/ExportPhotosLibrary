@@ -75,10 +75,15 @@ if not os.path.isdir(destinationRoot):
     sys.stderr.write('Destination path "%s" does not appear to be a directory.\n' % destinationRoot)
     sys.exit(-1)
 
+# Determine the database directory, in case we're using a case-sensitive FS. (Older libraries have a capitalised directory name.)
+databaseDir = os.path.join(libraryRoot, 'database')
+if not os.path.isdir(databaseDir):
+    databaseDir = os.path.join(libraryRoot, 'Database')
+
 # Copy the database to a temporary directory, so as to not potentially harm the original.
 tempDir = mkdtemp()
 databasePathLibrary = os.path.join(tempDir, 'Library.apdb')
-shutil.copyfile(os.path.join(libraryRoot, 'Database', 'Library.apdb'), databasePathLibrary)
+shutil.copyfile(os.path.join(databaseDir, 'Library.apdb'), databasePathLibrary)
 
 # Open a connection to this temporary database.
 conn = sqlite3.connect(databasePathLibrary)
@@ -93,7 +98,7 @@ print ("Found %d images." % numImages)
 # Are we exporting faces?
 if args.faces:
     facesDbPath = os.path.join(tempDir, 'Person.db')
-    shutil.copyfile(os.path.join(libraryRoot, 'Database', 'Person.db'), facesDbPath)
+    shutil.copyfile(os.path.join(databaseDir, 'Person.db'), facesDbPath)
 
     fconn = sqlite3.connect(facesDbPath)
     fconn.row_factory = sqlite3.Row
@@ -106,7 +111,7 @@ if args.faces:
 # What about places?
 if args.location:
     placesDbPath = os.path.join(tempDir, 'Properties.apdb')
-    shutil.copyfile(os.path.join(libraryRoot, 'Database', 'Properties.apdb'), placesDbPath)
+    shutil.copyfile(os.path.join(databaseDir, 'Properties.apdb'), placesDbPath)
 
     pconn = sqlite3.connect(placesDbPath)
     pconn.row_factory = sqlite3.Row
