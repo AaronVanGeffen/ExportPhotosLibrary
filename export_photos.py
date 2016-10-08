@@ -196,7 +196,8 @@ epoch = datetime(2001, 1, 1, 0, 0, 0, 0, timezone.utc).timestamp()
 
 
 def photoTimestamp(row):
-    return datetime.fromtimestamp(epoch + row["date"] + row["offset"], timezone.utc)
+    offset = row["offset"] if row["offset"] is not None else 0
+    return datetime.fromtimestamp(epoch + row["date"] + offset, timezone.utc)
 
 
 # Creates a directory if it does not exist.
