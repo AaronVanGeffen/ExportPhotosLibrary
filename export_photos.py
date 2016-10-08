@@ -165,7 +165,7 @@ def facesByUuid(uuId):
             SELECT f.personId
             FROM RKFace AS f
             WHERE f.imageId = ?
-        )''', (uuId,))
+        ) AND p.name IS NOT NULL''', (uuId,))
 
     faces = fdb.fetchall()
     return [f["name"] for f in faces]
