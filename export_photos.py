@@ -80,10 +80,17 @@ databaseDir = os.path.join(libraryRoot, 'database')
 if not os.path.isdir(databaseDir):
     databaseDir = os.path.join(libraryRoot, 'Database')
 
+# Are we dealing with an Aperture, iPhoto, or pre-Sierra style Photos library?
+isLegacyLibrary = os.path.isfile(os.path.join(databaseDir, 'Library.apdb'))
+
 # Copy the database to a temporary directory, so as to not potentially harm the original.
 tempDir = mkdtemp()
-databasePathLibrary = os.path.join(tempDir, 'Library.apdb')
-shutil.copyfile(os.path.join(databaseDir, 'Library.apdb'), databasePathLibrary)
+if isLegacyLibrary:
+	databasePathLibrary = os.path.join(tempDir, 'Library.apdb')
+	shutil.copyfile(os.path.join(databaseDir, 'Library.apdb'), databasePathLibrary)
+else:
+	databasePathLibrary = os.path.join(tempDir, 'photos.db')
+	shutil.copyfile(os.path.join(databaseDir, 'photos.db'), databasePathLibrary)
 
 # Open a connection to this temporary database.
 conn = sqlite3.connect(databasePathLibrary)
@@ -97,28 +104,35 @@ print ("Found %d images." % numImages)
 
 # Are we exporting faces?
 if args.faces:
-    facesDbPath = os.path.join(tempDir, 'Person.db')
-    shutil.copyfile(os.path.join(databaseDir, 'Person.db'), facesDbPath)
+    if isLegacyLibrary:
+        facesDbPath = os.path.join(tempDir, 'Person.db')
+        shutil.copyfile(os.path.join(databaseDir, 'Person.db'), facesDbPath)
 
-    fconn = sqlite3.connect(facesDbPath)
-    fconn.row_factory = sqlite3.Row
-    fdb = fconn.cursor()
+        fconn = sqlite3.connect(facesDbPath)
+        fconn.row_factory = sqlite3.Row
+        fdb = fconn.cursor()
+    else:
+        fdb = conn.cursor()
 
-    fdb.execute("SELECT COUNT(*) FROM RKFace WHERE personId > 0");
+    fdb.execute("SELECT COUNT(*) FROM RKFace WHERE personId > 0")
     numFaces = fdb.fetchone()[0];
     print ("Found %d tagged faces." % numFaces)
 
 # What about places?
 if args.location:
-    placesDbPath = os.path.join(tempDir, 'Properties.apdb')
-    shutil.copyfile(os.path.join(databaseDir, 'Properties.apdb'), placesDbPath)
+    if isLegacyLibrary:
+        placesDbPath = os.path.join(tempDir, 'Properties.apdb')
+        shutil.copyfile(os.path.join(databaseDir, 'Properties.apdb'), placesDbPath)
 
-    pconn = sqlite3.connect(placesDbPath)
-    pconn.row_factory = sqlite3.Row
-    pdb = pconn.cursor()
-    ldb = conn.cursor()
+        pconn = sqlite3.connect(placesDbPath)
+        pconn.row_factory = sqlite3.Row
+        pdb = pconn.cursor()
+        ldb = conn.cursor()
+    else:
+        pdb = conn.cursor()
+        ldb = conn.cursor()
 
-    pdb.execute("SELECT COUNT(*) FROM RKPlace");
+    pdb.execute("SELECT COUNT(*) FROM RKPlace")
     numPlaces = pdb.fetchone()[0];
     print ("Found %d places." % numPlaces)
 
