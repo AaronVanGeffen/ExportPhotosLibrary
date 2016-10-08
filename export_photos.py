@@ -241,7 +241,8 @@ def postProcessPhoto(fileName, row):
                 if args.verbose:
                     print ("> EXIF date '%s' will be replaced with '%s'" % (compareDate, desiredDate))
 
-                setDateInExif(destinationFile, desiredDate)
+                if not args.dryrun:
+                    setDateInExif(destinationFile, desiredDate)
 
     # Set faces as EXIF keywords.
     if args.faces:
@@ -249,7 +250,8 @@ def postProcessPhoto(fileName, row):
         if len(faces) and args.verbose:
             print ("> Faces:", ', '.join([face for face in faces]))
 
-        setExifKeywords(fileName, faces)
+        if not args.dryrun:
+            setExifKeywords(fileName, faces)
 
 
 # Shows a helpful progress bar.
@@ -316,9 +318,11 @@ for row in db.execute('''
                 elif status == 2:
                     ignored += 1
 
-                # Apply post-processing.
+                # Apply post-processing... or pretend to, anyway.
                 if not args.dryrun:
                     postProcessPhoto(destinationFile, photo)
+                else:
+                    postProcessPhoto(os.path.join(libraryRoot, "Masters", photo["imagePath"]), photo)
 
                 # Keep track of our progress.
                 index += 1
