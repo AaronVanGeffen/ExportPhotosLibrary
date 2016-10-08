@@ -12,36 +12,6 @@ from exiftool import ExifTool, fsencode
 from signal import signal, SIGINT
 from tempfile import mkdtemp
 
-# Closes database and deletes temporary files.
-def cleanUp():
-    db.close()
-    shutil.rmtree(tempDir)
-    print("\nDeleted temporary files")
-
-    if 'et' in globals():
-        et.terminate()
-        print("Closed ExifTool.")
-
-def cleanOnInterrupt(signal, frame):
-    cleanUp()
-    sys.exit(0)
-
-# Clean up after ourselves in case the script is interrupted.
-signal(SIGINT, cleanOnInterrupt)
-
-# Creates a directory if it does not exist.
-def ensureDirExists(path):
-    if not os.path.isdir(path):
-        os.makedirs(path)
-
-# Shows a helpful progress bar.
-def showProgressBar(total, completed):
-    progress = completed / total * 100
-    i = int(progress / 2)
-    sys.stdout.write("Progress: [%-50s] %d / %d (%d%%)" % ('=' * i, completed, total, progress))
-    sys.stdout.write('\r')
-    sys.stdout.flush()
-
 # Command line arguments.
 parser = argparse.ArgumentParser(description = 'Exports the contents of a Photos.app library to date-based directories.', formatter_class = argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('-s', '--source', default = "~/Pictures/Photos Library.photoslibrary", help = 'path to Photos.app library')
@@ -91,6 +61,23 @@ if isLegacyLibrary:
 else:
 	databasePathLibrary = os.path.join(tempDir, 'photos.db')
 	shutil.copyfile(os.path.join(databaseDir, 'photos.db'), databasePathLibrary)
+
+# Closes database and deletes temporary files.
+def cleanUp():
+    db.close()
+    shutil.rmtree(tempDir)
+    print("\nDeleted temporary files")
+
+    if 'et' in globals():
+        et.terminate()
+        print("Closed ExifTool.")
+
+def cleanOnInterrupt(signal, frame):
+    cleanUp()
+    sys.exit(0)
+
+# Clean up after ourselves in case the script is interrupted.
+signal(SIGINT, cleanOnInterrupt)
 
 # Open a connection to this temporary database.
 conn = sqlite3.connect(databasePathLibrary)
@@ -212,6 +199,12 @@ def photoTimestamp(row):
     return datetime.fromtimestamp(epoch + row["date"] + row["offset"], timezone.utc)
 
 
+# Creates a directory if it does not exist.
+def ensureDirExists(path):
+    if not os.path.isdir(path):
+        os.makedirs(path)
+
+
 def copyPhoto(row, destinationSubDir):
     # Get ready to copy the file.
     destinationDir = os.path.join(destinationRoot, destinationSubDir)
@@ -257,6 +250,15 @@ def postProcessPhoto(fileName, row):
             print ("> Faces:", ', '.join([face for face in faces]))
 
         setExifKeywords(fileName, faces)
+
+
+# Shows a helpful progress bar.
+def showProgressBar(total, completed):
+    progress = completed / total * 100
+    i = int(progress / 2)
+    sys.stdout.write("Progress: [%-50s] %d / %d (%d%%)" % ('=' * i, completed, total, progress))
+    sys.stdout.write('\r')
+    sys.stdout.flush()
 
 
 index = 0
