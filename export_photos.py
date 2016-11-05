@@ -26,6 +26,9 @@ group = parser.add_mutually_exclusive_group()
 group.add_argument('-p', '--progress', default = True, help = "show a bar indicating the completion of the copying progress", action = "store_true")
 group.add_argument('-v', '--verbose', default = False, help = "increase the output verbosity", action = "store_true")
 
+parser.add_argument('--start_date', default = "", help = "Start date (YYYY-MM-DD) for export range.")
+parser.add_argument('--end_date', default = "", help = "End date (YYYY-MM-DD) for export range.")
+
 args = parser.parse_args()
 
 if args.region:
@@ -84,8 +87,19 @@ conn = sqlite3.connect(databasePathLibrary)
 conn.row_factory = sqlite3.Row
 db = conn.cursor()
 
+# Cocoa/Webkit uses a different epoch rather than the standard UNIX epoch.
+epoch = datetime(2001, 1, 1, 0, 0, 0, 0, timezone.utc).timestamp()
+
+# Define range of photos to export.
+exportRangeStart = datetime.strptime(args.start_date, "%Y-%m-%d").timestamp() - epoch if len(args.start_date) else 0
+exportRangeEnd   = datetime.strptime(args.end_date, "%Y-%m-%d").timestamp() - epoch   if len(args.end_date)   else datetime.now().timestamp() - epoch
+
 # How many images do we have?
-db.execute("SELECT COUNT(*) FROM RKMaster WHERE isInTrash = 0 ORDER BY createDate")
+db.execute('''
+    SELECT COUNT(*)
+    FROM RKMaster AS m
+    INNER JOIN RKVersion AS v ON v.masterId = m.modelId
+    WHERE m.isInTrash = 0 AND v.imageDate BETWEEN ? AND ?''', (exportRangeStart, exportRangeEnd))
 numImages = db.fetchone()[0]
 print ("Found %d images." % numImages)
 
@@ -191,10 +205,6 @@ def setExifKeywords(fileName, keywords):
     et.execute(*cmd)
 
 
-# Cocoa/Webkit uses a different epoch rather than the standard UNIX epoch.
-epoch = datetime(2001, 1, 1, 0, 0, 0, 0, timezone.utc).timestamp()
-
-
 def photoTimestamp(row):
     offset = row["offset"] if row["offset"] is not None else 0
     return datetime.fromtimestamp(epoch + row["date"] + offset, timezone.utc)
@@ -277,8 +287,8 @@ for row in db.execute('''
     SELECT m.imagePath, m.fileName, v.imageDate AS date, v.imageTimeZoneOffsetSeconds AS offset, v.uuid, v.modelId
     FROM RKMaster AS m
     INNER JOIN RKVersion AS v ON v.masterId = m.modelId
-    WHERE m.isInTrash = 0
-    ORDER BY v.imageDate'''):
+    WHERE m.isInTrash = 0 AND v.imageDate BETWEEN ? AND ?
+    ORDER BY v.imageDate''', (exportRangeStart, exportRangeEnd)):
 
     # Stack photos as long as their capture date matches.
     timestamp = photoTimestamp(row).strftime("%Y-%m-%d")
