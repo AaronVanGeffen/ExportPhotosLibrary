@@ -253,7 +253,7 @@ def postProcessPhoto(fileName, row):
                     print ("> EXIF date '%s' will be replaced with '%s'" % (compareDate, desiredDate))
 
                 if not args.dryrun:
-                    setDateInExif(destinationFile, desiredDate)
+                    setDateInExif(fileName, desiredDate)
 
     # Set faces as EXIF keywords.
     if args.faces:
