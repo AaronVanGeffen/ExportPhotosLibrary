@@ -200,6 +200,11 @@ def setDateInExif(fileName, formattedDate):
     et.execute(*cmd)
 
 
+def setOrientationInExif(fileName, orientation):
+    cmd = map(fsencode, ['-EXIF:Orientation=%s' % orientation, '-n', '-overwrite_original', fileName])
+    et.execute(*cmd)
+
+
 def setExifKeywords(fileName, keywords):
     cmd = map(fsencode, ['-keywords={0}'.format(word) for word in keywords] + ['-overwrite_original', fileName])
     et.execute(*cmd)
@@ -264,6 +269,10 @@ def postProcessPhoto(fileName, row):
 
         if not args.dryrun:
             setExifKeywords(fileName, faces)
+
+    # Set orientation in EXIF.
+    if not args.dryrun:
+        setOrientationInExif(fileName, row["orientation"])
 
 
 # Shows a helpful progress bar.
@@ -346,7 +355,8 @@ def processStack():
 
 # Iterate over the photos.
 for row in db.execute('''
-    SELECT m.imagePath, m.fileName, v.imageDate AS date, v.imageTimeZoneOffsetSeconds AS offset, v.uuid, v.modelId
+    SELECT m.imagePath, m.fileName, v.imageDate AS date, v.imageTimeZoneOffsetSeconds AS offset,
+        v.uuid, v.modelId, v.orientation
     FROM RKMaster AS m
     INNER JOIN RKVersion AS v ON v.masterId = m.modelId
     WHERE m.isInTrash = 0 AND v.imageDate BETWEEN ? AND ?
