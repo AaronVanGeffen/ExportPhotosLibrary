@@ -240,20 +240,21 @@ def copyPhoto(row, destinationSubDir):
 
 # TODO: merge calls to exiftool.
 def postProcessPhoto(fileName, row):
-    # Do we need to set some EXIF data while we're at it?
-    if args.exif:
-        extension = os.path.splitext(row["fileName"])[1].lower()
-        if extension == '.jpg' or extension == '.jpeg':
-            compareDate = currentDateInExif(fileName)
-            desiredDate = photoTimestamp(row).strftime("%Y:%m:%d %H:%M:%S")
+    extension = os.path.splitext(row["fileName"])[1].lower()
+    if not (extension == '.jpg' or extension == '.jpeg'):
+        return
 
-            # Do we need to set a date ourselves?
-            if compareDate != desiredDate:
-                if args.verbose:
-                    print ("> EXIF date '%s' will be replaced with '%s'" % (compareDate, desiredDate))
+    # Figure out what date is currently set in the image, and whether this matches the database.
+    compareDate = currentDateInExif(fileName)
+    desiredDate = photoTimestamp(row).strftime("%Y:%m:%d %H:%M:%S")
 
-                if not args.dryrun:
-                    setDateInExif(fileName, desiredDate)
+    # Do we need to set a date ourselves?
+    if compareDate != desiredDate:
+        if args.verbose:
+            print ("> EXIF date '%s' will be replaced with '%s'" % (compareDate, desiredDate))
+
+        if not args.dryrun:
+            setDateInExif(fileName, desiredDate)
 
     # Set faces as EXIF keywords.
     if args.faces:
@@ -324,10 +325,11 @@ def processStack():
             ignored += 1
 
         # Apply post-processing... or pretend to, anyway.
-        if not args.dryrun:
-            postProcessPhoto(destinationFile, photo)
-        else:
-            postProcessPhoto(os.path.join(libraryRoot, "Masters", photo["imagePath"]), photo)
+        if args.exif:
+            if not args.dryrun:
+                postProcessPhoto(destinationFile, photo)
+            else:
+                postProcessPhoto(os.path.join(libraryRoot, "Masters", photo["imagePath"]), photo)
 
         # Keep track of our progress.
         index += 1
