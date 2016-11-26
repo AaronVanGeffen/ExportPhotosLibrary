@@ -282,6 +282,66 @@ stack = []
 stack_timestamp = ""
 places_freq = dict()
 
+
+def pushOntoStack(row):
+    stack.append(row)
+    if args.location:
+        place = placeByModelId(row["modelId"])
+        if len(place):
+            places_freq[place] = places_freq.get(place, 0) + 1
+            if args.verbose:
+                print ("Place for photo: %s" % place)
+        elif args.verbose:
+            print ("No place info")
+
+
+def processStack():
+    global stack, places_freq, index, copied, ignored
+
+    # Don't bother if the stack is empty.
+    if not stack:
+        return
+
+    # Figure out the dominant place for this day.
+    place = ''
+    if args.location and len(places_freq):
+        place = max(places_freq, key = places_freq.get)
+        if not len(place):
+            place = ''
+
+    # Destination dir
+    destinationSubDir = stack_timestamp + (" " + place if len(place) else "")
+    if args.verbose:
+        print ("Destination subdir for stack (%d photos): \"%s\"" % (len(stack), destinationSubDir))
+
+    # Copy and process files in the stack.
+    for photo in stack:
+        # Copy the file if it's not in its destination yet.
+        (destinationFile, status) = copyPhoto(photo, destinationSubDir)
+        if status == 1:
+            copied += 1
+        elif status == 2:
+            ignored += 1
+
+        # Apply post-processing... or pretend to, anyway.
+        if not args.dryrun:
+            postProcessPhoto(destinationFile, photo)
+        else:
+            postProcessPhoto(os.path.join(libraryRoot, "Masters", photo["imagePath"]), photo)
+
+        # Keep track of our progress.
+        index += 1
+        if args.progress:
+            showProgressBar(numImages, index)
+
+    if args.verbose:
+        print ("")
+
+    # Clear the stack
+    stack = []
+    places_freq = dict()
+
+
 # Iterate over the photos.
 for row in db.execute('''
     SELECT m.imagePath, m.fileName, v.imageDate AS date, v.imageTimeZoneOffsetSeconds AS offset, v.uuid, v.modelId
@@ -293,71 +353,16 @@ for row in db.execute('''
     # Stack photos as long as their capture date matches.
     timestamp = photoTimestamp(row).strftime("%Y-%m-%d")
     if timestamp == stack_timestamp:
-        stack.append(row)
-
-        if args.location:
-            place = placeByModelId(row["modelId"])
-            if len(place):
-                places_freq[place] = places_freq.get(place, 0) + 1
-                if args.verbose:
-                    print ("Place for photo: %s" % place)
-            elif args.verbose:
-                print ("No place info")
+        pushOntoStack(row)
 
     # Ah, reached another date?
     else:
-        # First, process existing stack, if any.
-        if len(stack):
-            # Figure out the dominant place for this day.
-            place = ''
-            if args.location and len(places_freq):
-                place = max(places_freq, key = places_freq.get)
-                if not len(place):
-                    place = ''
-
-            # Destination dir
-            destinationSubDir = stack_timestamp + (" " + place if len(place) else "")
-            if args.verbose:
-                print ("Destination subdir for stack (%d photos): \"%s\"" % (len(stack), destinationSubDir))
-
-            # Copy and process files in the stack.
-            for photo in stack:
-                # Copy the file if it's not in its destination yet.
-                (destinationFile, status) = copyPhoto(photo, destinationSubDir)
-                if status == 1:
-                    copied += 1
-                elif status == 2:
-                    ignored += 1
-
-                # Apply post-processing... or pretend to, anyway.
-                if not args.dryrun:
-                    postProcessPhoto(destinationFile, photo)
-                else:
-                    postProcessPhoto(os.path.join(libraryRoot, "Masters", photo["imagePath"]), photo)
-
-                # Keep track of our progress.
-                index += 1
-                if args.progress:
-                    showProgressBar(numImages, index)
-
-            if args.verbose:
-                print ("")
-
-        # Clear the stack
-        stack = [row]
+        processStack()
         stack_timestamp = timestamp
+        pushOntoStack(row)
 
-        if args.location:
-            place = placeByModelId(row["modelId"])
-            if len(place):
-                places_freq = dict({place: 1})
-                if args.verbose:
-                    print ("Place for photo: %s" % place)
-            else:
-                places_freq = dict()
-                if args.verbose:
-                    print ("No place info")
-
+# Process the last batch.
+processStack()
 
 print ("Copying completed.")
 print ("%d files copied" % copied)
